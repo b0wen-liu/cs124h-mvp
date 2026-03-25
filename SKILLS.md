@@ -1,0 +1,1 @@
+Two-person project, one person handles pushup tracker one person handles body measurement. Prompt user to indicate which function is being worked on per session, and avoid interacting with anything outside of that scope for the duration of the session unless told.
