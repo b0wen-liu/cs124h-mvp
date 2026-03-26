@@ -83,7 +83,7 @@ class PushupTracker:
 
     def __init__(self):
         options = vision.PoseLandmarkerOptions(
-            base_options=mp_tasks.BaseOptions(model_asset_path=get_model_path()),
+            base_options=mp_tasks.BaseOptions(model_asset_path=get_model_path("pose")),
             running_mode=vision.RunningMode.VIDEO,
             min_pose_detection_confidence=_MIN_VIS,
             min_pose_presence_confidence=_MIN_VIS,

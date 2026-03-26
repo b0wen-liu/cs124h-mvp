@@ -246,6 +246,22 @@ def on_reset():
     emit("reset_ok", {"message": "Tracker reset — rep count cleared"})
 
 
+@socketio.on("start", namespace="/api/pushup-stream")
+def on_start():
+    sid = request.sid
+    if sid in _trackers:
+        _trackers[sid].start()
+    emit("started", {"message": "Tracking started"})
+
+
+@socketio.on("stop", namespace="/api/pushup-stream")
+def on_stop():
+    sid = request.sid
+    if sid in _trackers:
+        _trackers[sid].stop()
+    emit("stopped", {"message": "Tracking stopped"})
+
+
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

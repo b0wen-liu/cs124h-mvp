@@ -59,6 +59,7 @@
   <div class="tab-bar">
     <button class="active" onclick="setTab('analyze')" id="tab-analyze">Measure</button>
     <button onclick="setTab('compare')" id="tab-compare">Before / After</button>
+    <button onclick="setTab('pushup')" id="tab-pushup">Pushup Tracker</button>
   </div>
 
   <!-- ═══════════════════════════════ MEASURE TAB ═══════════════════════════ -->
@@ -201,13 +202,197 @@
 
   </div><!-- /panel-compare -->
 
+  <!-- ═══════════════════════════════ PUSHUP TAB ════════════════════════════ -->
+  <div id="panel-pushup" style="display:none">
+
+    <div class="card">
+      <h2>Pushup Tracker</h2>
+      <div class="aruco-tip" style="border-color:#1a3a1a;background:#0f1f0f;color:#4ade80;">
+        <strong>Camera tip:</strong> Side view works best — place your camera at shoulder height, 3–6 ft away. Wear fitted clothes for best detection.
+      </div>
+    </div>
+
+    <!-- Webcam feed -->
+    <div class="card" style="text-align:center;padding:12px;">
+      <video id="pushup-video" autoplay playsinline muted style="display:none"></video>
+      <canvas id="pushup-canvas" style="max-width:100%;border-radius:8px;background:#000;display:none;"></canvas>
+      <div id="pushup-placeholder" style="color:#555;padding:48px 0;font-size:0.9rem;">Camera off — click Start Camera to begin</div>
+    </div>
+
+    <!-- Controls -->
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
+      <button id="btn-camera" onclick="toggleCamera()">Start Camera</button>
+      <button id="btn-track" onclick="toggleTracking()" disabled>Start Tracking</button>
+      <button id="btn-reset" onclick="resetTracker()" disabled>Reset</button>
+    </div>
+
+    <!-- Stats -->
+    <div class="card">
+      <div class="row" style="text-align:center;">
+        <div class="col">
+          <div id="stat-reps" style="font-size:3rem;font-weight:800;color:#4ade80;">0</div>
+          <div style="color:#555;font-size:0.78rem;text-transform:uppercase;letter-spacing:.06em;">Reps</div>
+        </div>
+        <div class="col">
+          <div id="stat-form" style="font-size:2rem;font-weight:700;color:#fff;">—</div>
+          <div style="color:#555;font-size:0.78rem;text-transform:uppercase;letter-spacing:.06em;">Form Score</div>
+        </div>
+        <div class="col">
+          <div id="stat-state" style="font-size:1.5rem;font-weight:700;color:#fff;">—</div>
+          <div style="color:#555;font-size:0.78rem;text-transform:uppercase;letter-spacing:.06em;">State</div>
+        </div>
+      </div>
+      <div id="pushup-feedback" style="margin-top:14px;min-height:28px;"></div>
+    </div>
+
+  </div><!-- /panel-pushup -->
+
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script>
     // ── Tabs ──────────────────────────────────────────────────────────────────
     function setTab(name) {
-      ['analyze','compare'].forEach(t => {
+      ['analyze','compare','pushup'].forEach(t => {
         document.getElementById('panel-' + t).style.display = t === name ? 'block' : 'none';
         document.getElementById('tab-' + t).classList.toggle('active', t === name);
       });
+    }
+
+    // ── Pushup Tracker ────────────────────────────────────────────────────────
+    let pushupSocket  = null;
+    let pushupStream  = null;
+    let pushupTracking = false;
+    let frameInterval = null;
+    let receivingAnnotated = false;
+
+    async function toggleCamera() {
+      if (!pushupStream) {
+        try {
+          pushupStream = await navigator.mediaDevices.getUserMedia({ video: true });
+          const video = document.getElementById('pushup-video');
+          video.srcObject = pushupStream;
+
+          video.onloadedmetadata = () => {
+            video.play();
+            const canvas = document.getElementById('pushup-canvas');
+            canvas.width  = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.style.display = 'block';
+          };
+
+          document.getElementById('pushup-placeholder').style.display = 'none';
+
+          // Connect socket
+          pushupSocket = io('/api/pushup-stream');
+          pushupSocket.on('connected', () => {
+            document.getElementById('btn-track').disabled = false;
+            document.getElementById('btn-reset').disabled = false;
+          });
+          pushupSocket.on('result',   onPushupResult);
+          pushupSocket.on('started',  () => { pushupTracking = true;  updateTrackBtn(); });
+          pushupSocket.on('stopped',  () => { pushupTracking = false; updateTrackBtn(); });
+          pushupSocket.on('reset_ok', () => {
+            document.getElementById('stat-reps').textContent  = '0';
+            document.getElementById('stat-form').textContent  = '—';
+            document.getElementById('stat-state').textContent = '—';
+            document.getElementById('pushup-feedback').innerHTML = '';
+          });
+
+          frameInterval = setInterval(() => { drawLocal(); sendFrame(); }, 100); // 10 fps
+
+          document.getElementById('btn-camera').textContent = 'Stop Camera';
+          document.getElementById('btn-camera').style.background = '#374151';
+        } catch(e) {
+          alert('Could not access camera: ' + e.message);
+        }
+      } else {
+        // Stop everything
+        clearInterval(frameInterval); frameInterval = null;
+        pushupStream.getTracks().forEach(t => t.stop());
+        pushupStream = null;
+        if (pushupSocket) { pushupSocket.disconnect(); pushupSocket = null; }
+
+        const canvas = document.getElementById('pushup-canvas');
+        canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+        canvas.style.display = 'none';
+        document.getElementById('pushup-placeholder').style.display = 'block';
+
+        pushupTracking = false;
+        receivingAnnotated = false;
+        document.getElementById('btn-camera').textContent = 'Start Camera';
+        document.getElementById('btn-camera').style.background = '';
+        document.getElementById('btn-track').disabled = true;
+        document.getElementById('btn-reset').disabled = true;
+        updateTrackBtn();
+      }
+    }
+
+    function toggleTracking() {
+      if (!pushupSocket) return;
+      pushupSocket.emit(pushupTracking ? 'stop' : 'start');
+    }
+
+    function resetTracker() {
+      if (pushupSocket) pushupSocket.emit('reset');
+    }
+
+    function drawLocal() {
+      if (receivingAnnotated) return; // server is sending annotated frames, don't overwrite
+      const video  = document.getElementById('pushup-video');
+      const canvas = document.getElementById('pushup-canvas');
+      if (!video.videoWidth) return;
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+    }
+
+    function sendFrame() {
+      const video = document.getElementById('pushup-video');
+      if (!video.videoWidth) return;
+      const tmp = document.createElement('canvas');
+      tmp.width  = video.videoWidth;
+      tmp.height = video.videoHeight;
+      tmp.getContext('2d').drawImage(video, 0, 0);
+      const b64 = tmp.toDataURL('image/jpeg', 0.7).split(',')[1];
+      if (pushupSocket) pushupSocket.emit('frame', { image_base64: b64 });
+    }
+
+    function onPushupResult(data) {
+      document.getElementById('stat-reps').textContent = data.rep_count;
+
+      const formEl = document.getElementById('stat-form');
+      if (data.form_score != null) {
+        formEl.textContent = data.form_score.toFixed(0) + '/100';
+        formEl.style.color = data.form_score >= 80 ? '#4ade80' : data.form_score >= 55 ? '#fb923c' : '#f87171';
+      }
+
+      const stateEl = document.getElementById('stat-state');
+      if (data.state) {
+        stateEl.textContent = data.state.toUpperCase();
+        stateEl.style.color = data.state === 'up' ? '#4ade80' : '#f87171';
+      }
+
+      if (data.annotated_frame_base64) {
+        receivingAnnotated = true;
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.getElementById('pushup-canvas');
+          canvas.width  = img.width;
+          canvas.height = img.height;
+          canvas.getContext('2d').drawImage(img, 0, 0);
+        };
+        img.src = 'data:image/jpeg;base64,' + data.annotated_frame_base64;
+      }
+
+      const fbEl = document.getElementById('pushup-feedback');
+      fbEl.innerHTML = (data.feedback || []).map(f =>
+        `<span class="badge amber" style="margin-right:6px;margin-bottom:4px;">${f}</span>`
+      ).join('');
+    }
+
+    function updateTrackBtn() {
+      const btn = document.getElementById('btn-track');
+      btn.textContent = pushupTracking ? 'Stop Tracking' : 'Start Tracking';
+      btn.style.background = pushupTracking ? '#991b1b' : '';
     }
 
     // ── Phone block toggle ────────────────────────────────────────────────────
