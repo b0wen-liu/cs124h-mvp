@@ -24,7 +24,7 @@ import tempfile
 
 import cv2
 import numpy as np
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, render_template
 from flask_socketio import SocketIO, emit
 
 from body_measure import analyze_body, compare_bodies
@@ -39,6 +39,11 @@ _trackers: dict[str, PushupTracker] = {}
 
 
 # ── REST endpoints ─────────────────────────────────────────────────────────────
+
+@app.route("/")
+def index():
+    return render_template("index.html")
+
 
 @app.route("/api/health", methods=["GET"])
 def health():
