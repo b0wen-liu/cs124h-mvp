@@ -3,7 +3,7 @@ app.py — Flask + SocketIO API server for the CV fitness features.
 
 Endpoints:
     GET  /api/health             — liveness check
-    POST /api/body-analyze       — body ratio analysis from a photo
+    POST /api/body-analyze       — body measurements + BF% from 1-8 photos
     POST /api/body-compare       — before/after comparison
 
 WebSocket namespace: /api/pushup-stream
@@ -27,12 +27,14 @@ import numpy as np
 from flask import Flask, jsonify, request, render_template
 from flask_socketio import SocketIO, emit
 
-from body_measure import analyze_body, compare_bodies
+from body_analyzer import BodyAnalyzer
 from pushup_tracker import PushupTracker
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "cv-fitness-dev-key")
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+
+_analyzer = BodyAnalyzer(marker_size_cm=5.0)
 
 # sid → PushupTracker
 _trackers: dict[str, PushupTracker] = {}
@@ -50,63 +52,72 @@ def health():
     return jsonify({"status": "ok"})
 
 
+def _save_upload(file) -> str:
+    """Save a FileStorage to a temp file and return its path."""
+    suffix = os.path.splitext(file.filename or "")[1] or ".jpg"
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    file.save(tmp.name)
+    tmp.close()
+    return tmp.name
+
+
+def _parse_phone_dims() -> tuple | None:
+    """Parse phone_height and phone_width from form data, return (h, w) or None."""
+    try:
+        ph = float(request.form.get("phone_height", 0))
+        pw = float(request.form.get("phone_width",  0))
+        return (ph, pw) if ph > 0 and pw > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
 @app.route("/api/body-analyze", methods=["POST"])
 def body_analyze():
     """
-    Accepts:
-        multipart/form-data  with field "image" (file) and optional "visualize" ("true"/"false")
-        OR application/json  with field "image_base64" (base64 string) and optional "visualize"
+    POST /api/body-analyze
+    multipart/form-data fields:
+        images        (files, 1-8)       — photos from any angles (auto-classified)
+        height_cm     (float, required)  — user's height in cm
+        sex           ("male"/"female")  — for Navy BF% formula
+        phone_height  (float, optional)  — phone height in inches (fallback scale)
+        phone_width   (float, optional)  — phone width in inches
+        visualize     ("true"/"false")
 
-    Returns 200 on success, 422 on pose/confidence failure, 400 on bad request.
-
-    Success response:
-        {
-            "success": true,
-            "timestamp": "2024-01-01T00:00:00Z",
-            "confidence": 0.91,
-            "ratios": {
-                "shoulder_hip_ratio":    1.32,
-                "torso_to_shoulder":     1.05,
-                "arm_span_to_shoulder":  2.61,
-                "leg_to_torso":          1.74,
-                "left_arm_to_shoulder":  1.28,
-                "right_arm_to_shoulder": 1.27
-            }
-        }
+    Returns circumferences (cm), body_fat_pct, skeletal_ratios, calibration info.
+    Attach a 5 cm ArUco marker (DICT_4X4_50, ID 0) in each photo for best accuracy.
     """
-    visualize = False
-
-    if request.is_json:
-        data = request.get_json()
-        if "image_base64" not in data:
-            return jsonify({"error": "JSON body must include 'image_base64'"}), 400
-        visualize = str(data.get("visualize", "false")).lower() == "true"
-        img_bytes = base64.b64decode(data["image_base64"])
-        nparr = np.frombuffer(img_bytes, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        if img is None:
-            return jsonify({"error": "Could not decode image from base64"}), 400
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
-        cv2.imwrite(tmp.name, img)
-        tmp_path = tmp.name
-        tmp.close()
-
-    elif "image" in request.files:
-        file = request.files["image"]
-        visualize = request.form.get("visualize", "false").lower() == "true"
-        suffix = os.path.splitext(file.filename or "")[1] or ".jpg"
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-        file.save(tmp.name)
-        tmp_path = tmp.name
-        tmp.close()
-
-    else:
-        return jsonify({"error": "Provide 'image' (multipart) or 'image_base64' (JSON)"}), 400
+    files = request.files.getlist("images")
+    # also accept legacy single-file field names
+    for fname in ("front_image", "side_image"):
+        if fname in request.files:
+            files.append(request.files[fname])
+    if not files:
+        return jsonify({"error": "Provide at least one image under 'images'"}), 400
 
     try:
-        result = analyze_body(tmp_path, visualize=visualize)
+        height_cm = float(request.form.get("height_cm", 0))
+    except (TypeError, ValueError):
+        height_cm = 0
+    if height_cm <= 0:
+        return jsonify({"error": "Provide 'height_cm' (positive float, e.g. 177.8)"}), 400
+
+    sex = request.form.get("sex", "male").lower()
+    if sex not in ("male", "female"):
+        return jsonify({"error": "'sex' must be 'male' or 'female'"}), 400
+
+    paths = []
+    try:
+        for f in files:
+            paths.append(_save_upload(f))
+
+        phone_dims = _parse_phone_dims()
+        visualize  = request.form.get("visualize", "false").lower() == "true"
+        result     = _analyzer.analyze(paths, height_cm=height_cm, sex=sex,
+                                        phone_dims=phone_dims, visualize=visualize)
     finally:
-        os.unlink(tmp_path)
+        for p in paths:
+            if os.path.exists(p):
+                os.unlink(p)
 
     status = 200 if result.get("success") else 422
     return jsonify(result), status
@@ -115,35 +126,51 @@ def body_analyze():
 @app.route("/api/body-compare", methods=["POST"])
 def body_compare():
     """
-    Accepts multipart/form-data with files "before" and "after".
-
-    Returns delta report:
-        {
-            "success": true,
-            "before": { ...ratios... },
-            "after":  { ...ratios... },
-            "deltas": {
-                "shoulder_hip_ratio": { "before": 1.28, "after": 1.34, "change_pct": 4.69 },
-                ...
-            }
-        }
+    POST /api/body-compare
+    multipart/form-data fields:
+        before_images (files, 1-8)  — photos from the "before" session
+        after_images  (files, 1-8)  — photos from the "after" session
+        height_cm     (float, required)
+        sex           ("male"/"female")
+        phone_height, phone_width  (floats, optional)
     """
-    if "before" not in request.files or "after" not in request.files:
-        return jsonify({"error": "Provide both 'before' and 'after' image files"}), 400
+    before_files = request.files.getlist("before_images")
+    after_files  = request.files.getlist("after_images")
+    # legacy field names
+    for fname in ("before_front", "before_side"):
+        if fname in request.files:
+            before_files.append(request.files[fname])
+    for fname in ("after_front", "after_side"):
+        if fname in request.files:
+            after_files.append(request.files[fname])
 
-    paths = {}
+    if not before_files or not after_files:
+        return jsonify({"error": "Provide 'before_images' and 'after_images' files"}), 400
+
     try:
-        for key in ("before", "after"):
-            f = request.files[key]
-            suffix = os.path.splitext(f.filename or "")[1] or ".jpg"
-            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-            f.save(tmp.name)
-            paths[key] = tmp.name
-            tmp.close()
+        height_cm = float(request.form.get("height_cm", 0))
+    except (TypeError, ValueError):
+        height_cm = 0
+    if height_cm <= 0:
+        return jsonify({"error": "Provide 'height_cm' (positive float)"}), 400
 
-        result = compare_bodies(paths["before"], paths["after"])
+    sex = request.form.get("sex", "male").lower()
+    if sex not in ("male", "female"):
+        return jsonify({"error": "'sex' must be 'male' or 'female'"}), 400
+
+    before_paths, after_paths = [], []
+    try:
+        for f in before_files:
+            before_paths.append(_save_upload(f))
+        for f in after_files:
+            after_paths.append(_save_upload(f))
+
+        phone_dims = _parse_phone_dims()
+        result = _analyzer.compare(before_paths, after_paths,
+                                    height_cm=height_cm, sex=sex,
+                                    phone_dims=phone_dims)
     finally:
-        for p in paths.values():
+        for p in before_paths + after_paths:
             if os.path.exists(p):
                 os.unlink(p)
 

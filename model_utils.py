@@ -1,29 +1,37 @@
 """
-model_utils.py — Downloads the MediaPipe Pose Landmarker model on first use.
+model_utils.py — Downloads MediaPipe task models on first use.
 
-The .task file is stored in cs124h-mvp/models/ and reused on subsequent runs.
+Models are stored in cs124h-mvp/models/ and reused on subsequent runs.
 """
 
 import os
 import urllib.request
 
 _DIR = os.path.join(os.path.dirname(__file__), "models")
-_MODEL_FILE = "pose_landmarker_full.task"
-MODEL_PATH = os.path.join(_DIR, _MODEL_FILE)
 
-# Full model: best accuracy. Swap for _lite_ if CPU is too slow.
-_MODEL_URL = (
-    "https://storage.googleapis.com/mediapipe-models/"
-    "pose_landmarker/pose_landmarker_full/float16/latest/"
-    "pose_landmarker_full.task"
-)
+_MODELS = {
+    "pose": (
+        "pose_landmarker_full.task",
+        "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task",
+    ),
+    "detector": (
+        "efficientdet_lite0.tflite",
+        "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/int8/latest/efficientdet_lite0.tflite",
+    ),
+    "segmenter": (
+        "selfie_segmenter.tflite",
+        "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite",
+    ),
+}
 
 
-def get_model_path() -> str:
-    """Return path to the model file, downloading it first if absent."""
-    if not os.path.exists(MODEL_PATH):
+def get_model_path(key: str) -> str:
+    """Return local path to a model file, downloading it first if absent."""
+    filename, url = _MODELS[key]
+    path = os.path.join(_DIR, filename)
+    if not os.path.exists(path):
         os.makedirs(_DIR, exist_ok=True)
-        print(f"[model_utils] Downloading pose model → {MODEL_PATH}")
-        urllib.request.urlretrieve(_MODEL_URL, MODEL_PATH)
-        print("[model_utils] Download complete.")
-    return MODEL_PATH
+        print(f"[model_utils] Downloading {key} model → {path}")
+        urllib.request.urlretrieve(url, path)
+        print(f"[model_utils] {key} model ready.")
+    return path
