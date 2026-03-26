@@ -3,158 +3,481 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CV Fitness App</title>
+  <title>CV Fitness — Body Analysis</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: system-ui, sans-serif; background: #111; color: #eee; padding: 24px; }
-    h1 { margin-bottom: 8px; font-size: 1.6rem; }
-    h2 { font-size: 1.1rem; margin-bottom: 12px; color: #aaa; }
+    body { font-family: system-ui, sans-serif; background: #111; color: #eee; padding: 24px; max-width: 960px; margin: 0 auto; }
+    h1 { margin-bottom: 4px; font-size: 1.5rem; }
+    .sub { color: #555; font-size: 0.85rem; margin-bottom: 24px; }
+    h2 { font-size: 1rem; margin-bottom: 12px; color: #aaa; font-weight: 600; }
     .card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 10px; padding: 20px; margin-bottom: 16px; }
-    label { display: block; margin-bottom: 6px; font-size: 0.85rem; color: #aaa; }
-    input[type=file] { width: 100%; padding: 8px; background: #222; border: 1px solid #333; border-radius: 6px; color: #eee; }
-    button { padding: 10px 22px; background: #2563eb; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 0.95rem; }
+    label { display: block; margin-bottom: 5px; font-size: 0.82rem; color: #888; }
+    input[type=file], select, input[type=number], input[type=text] {
+      width: 100%; padding: 8px; background: #222; border: 1px solid #333;
+      border-radius: 6px; color: #eee; font-size: 0.9rem; margin-bottom: 2px;
+    }
+    .row { display: flex; gap: 16px; flex-wrap: wrap; }
+    .col { flex: 1; min-width: 200px; }
+    button { padding: 10px 24px; background: #2563eb; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 0.95rem; margin-top: 4px; }
     button:hover { background: #1d4ed8; }
-    .result { margin-top: 16px; background: #0d0d0d; border-radius: 8px; padding: 14px; font-size: 0.85rem; }
-    .result pre { white-space: pre-wrap; word-break: break-word; color: #4ade80; }
-    .error pre { color: #f87171; }
-    .row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
-    .col { flex: 1; min-width: 260px; }
-    img.preview { max-width: 100%; border-radius: 8px; margin-top: 12px; }
-    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.78rem; font-weight: 600; }
-    .badge.green { background: #14532d; color: #4ade80; }
-    .ratio-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-    .ratio-table td { padding: 5px 8px; border-bottom: 1px solid #222; font-size: 0.88rem; }
-    .ratio-table td:first-child { color: #94a3b8; }
-    .ratio-table td:last-child { color: #fff; font-weight: 600; text-align: right; }
+    button:disabled { background: #333; color: #666; cursor: not-allowed; }
+    .badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 0.75rem; font-weight: 700; }
+    .green { background: #14532d; color: #4ade80; }
+    .amber { background: #431407; color: #fb923c; }
+    .red   { background: #450a0a; color: #f87171; }
+    .blue  { background: #1e3a5f; color: #60a5fa; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    td { padding: 6px 8px; border-bottom: 1px solid #222; font-size: 0.88rem; }
+    td.lbl  { color: #94a3b8; width: 55%; }
+    td.val  { color: #fff; font-weight: 600; text-align: right; }
+    td.note { color: #555; font-size: 0.75rem; font-style: italic; }
+    .section-title { font-size: 0.72rem; font-weight: 700; color: #555; text-transform: uppercase;
+                     letter-spacing: .07em; padding: 12px 0 4px; border-top: 1px solid #222; margin-top: 8px; }
+    .section-title:first-child { border-top: none; padding-top: 0; }
+    .note-box { margin-top: 12px; padding: 10px 12px; background: #1f1f1f; border-left: 3px solid #374151;
+                border-radius: 4px; font-size: 0.8rem; color: #888; line-height: 1.5; }
+    .warn-box { margin-top: 10px; padding: 8px 12px; background: #2a1f00; border-left: 3px solid #ca8a04;
+                border-radius: 4px; font-size: 0.78rem; color: #ca8a04; line-height: 1.5; }
+    .spinner { display: none; margin-left: 10px; color: #555; font-size: 0.85rem; }
+    .delta-pos { color: #4ade80; }
+    .delta-neg { color: #f87171; }
+    img.preview { max-width: 100%; border-radius: 8px; margin-top: 10px; display: none; }
+    .tab-bar { display: flex; gap: 8px; margin-bottom: 20px; }
+    .tab-bar button { background: #374151; }
+    .tab-bar button.active { background: #2563eb; }
+    .aruco-tip { margin-top: 10px; padding: 10px 14px; background: #0f172a; border: 1px solid #1e3a5f;
+                 border-radius: 6px; font-size: 0.8rem; color: #60a5fa; line-height: 1.6; }
+    .aruco-tip strong { color: #93c5fd; }
+    .bf-big { font-size: 1.8rem; font-weight: 800; color: #4ade80; }
+    .bf-cat  { font-size: 0.8rem; color: #4ade80; margin-left: 6px; }
   </style>
 </head>
 <body>
-  <h1>CV Fitness App</h1>
-  <p style="color:#666;margin-bottom:20px;font-size:0.9rem;">Computer Vision — Group 4</p>
+  <h1>Body Analysis</h1>
+  <p class="sub">CV Fitness App — Group 4 &mdash; MediaPipe + ArUco measurement pipeline</p>
 
-  <div class="row">
-    <div class="col">
-      <div class="card">
-        <h2>Analyze a Photo</h2>
-        <label>Upload front-facing photo</label>
-        <input type="file" id="body-file" accept="image/*" onchange="previewBody(this)" />
-        <img id="body-preview" class="preview" style="display:none" />
-        <br/><br/>
-        <label><input type="checkbox" id="body-visualize" /> Include annotated image</label>
-        <br/><br/>
-        <button onclick="analyzeBody()">Analyze</button>
-      </div>
-    </div>
-    <div class="col">
-      <div class="card">
-        <h2>Results</h2>
-        <div id="body-result" style="color:#555;font-size:0.9rem;">Upload a photo and click Analyze.</div>
-        <img id="body-annotated" class="preview" style="display:none" />
-      </div>
-    </div>
+  <div class="tab-bar">
+    <button class="active" onclick="setTab('analyze')" id="tab-analyze">Measure</button>
+    <button onclick="setTab('compare')" id="tab-compare">Before / After</button>
   </div>
 
-  <div class="card">
-    <h2>Before / After Comparison</h2>
-    <div class="row">
-      <div class="col">
-        <label>Before photo</label>
-        <input type="file" id="before-file" accept="image/*" />
-      </div>
-      <div class="col">
-        <label>After photo</label>
-        <input type="file" id="after-file" accept="image/*" />
+  <!-- ═══════════════════════════════ MEASURE TAB ═══════════════════════════ -->
+  <div id="panel-analyze">
+
+    <!-- User info -->
+    <div class="card">
+      <h2>About You</h2>
+      <div class="row">
+        <div class="col">
+          <label>Height (cm)</label>
+          <input type="number" id="height-cm" placeholder="e.g. 177" min="100" max="250" step="0.5" />
+        </div>
+        <div class="col">
+          <label>Sex</label>
+          <select id="sex">
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+          </select>
+        </div>
       </div>
     </div>
-    <br/>
-    <button onclick="compareBodies()">Compare</button>
-    <div id="compare-result" style="color:#555;font-size:0.9rem;margin-top:12px;">Upload both photos and click Compare.</div>
-  </div>
+
+    <!-- Photos + ArUco tip -->
+    <div class="card">
+      <h2>Upload Photos</h2>
+      <label>Select 1–8 photos (any angles — auto-classified)</label>
+      <input type="file" id="analyze-files" accept="image/*" multiple onchange="previewFiles(this, 'analyze-previews')" />
+      <div id="analyze-previews" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;"></div>
+
+      <div class="aruco-tip">
+        <strong>Best accuracy:</strong> Print an ArUco marker (DICT_4X4_50, ID&nbsp;0, exactly <strong>5&nbsp;cm</strong> wide)
+        and tape it to your phone or hold it in each photo. The pipeline uses it as a ruler.<br/>
+        <span style="color:#4b6a8a">Fallback: enter your phone model below for approximate scale.</span>
+      </div>
+
+      <!-- Phone fallback (collapsed by default) -->
+      <div style="margin-top:12px;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" id="use-phone" onchange="togglePhone()" />
+          Use phone dimensions as fallback scale reference
+        </label>
+      </div>
+      <div id="phone-block" style="display:none;margin-top:10px;">
+        <div class="row">
+          <div class="col">
+            <label>Phone model</label>
+            <select id="phone-select" onchange="onPhoneSelect()">
+              <option value="">— Custom —</option>
+              <optgroup label="iPhone">
+                <option value="15.55,7.31">iPhone 16 Pro / 15 Pro (6.12 × 2.88 in)</option>
+                <option value="16.67,7.75">iPhone 16 Pro Max / 15 Pro Max (6.56 × 3.05 in)</option>
+                <option value="14.76,7.16">iPhone 16 / 15 / 14 (5.81 × 2.82 in)</option>
+                <option value="16.08,7.77">iPhone 16 Plus / 15 Plus (6.33 × 3.06 in)</option>
+                <option value="13.84,6.73">iPhone SE 3rd gen (5.45 × 2.65 in)</option>
+              </optgroup>
+              <optgroup label="Samsung Galaxy">
+                <option value="14.81,7.06">Galaxy S25 (5.83 × 2.78 in)</option>
+                <option value="15.85,7.54">Galaxy S25+ (6.24 × 2.97 in)</option>
+                <option value="16.66,7.75">Galaxy S25 Ultra (6.56 × 3.05 in)</option>
+                <option value="15.47,7.37">Galaxy S24 (6.09 × 2.90 in)</option>
+              </optgroup>
+              <optgroup label="Google Pixel">
+                <option value="15.11,7.16">Pixel 9 (5.95 × 2.82 in)</option>
+                <option value="15.54,7.32">Pixel 9 Pro (6.12 × 2.88 in)</option>
+                <option value="17.12,7.87">Pixel 9 Pro XL (6.74 × 3.10 in)</option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="col">
+            <label>Height (cm)</label>
+            <input type="number" id="phone-h-cm" step="0.1" placeholder="e.g. 15.5" />
+            <label style="margin-top:6px;">Width (cm)</label>
+            <input type="number" id="phone-w-cm" step="0.1" placeholder="e.g. 7.3" />
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:14px;display:flex;align-items:center;gap:8px;">
+        <label style="margin:0;display:flex;align-items:center;gap:6px;font-size:0.85rem;color:#888;cursor:pointer;">
+          <input type="checkbox" id="visualize" /> Return annotated image
+        </label>
+      </div>
+    </div>
+
+    <button onclick="doAnalyze()" id="btn-analyze">Analyze</button>
+    <span class="spinner" id="spin-analyze">Analyzing…</span>
+
+    <!-- Results -->
+    <div class="card" id="results-card" style="display:none;margin-top:16px;">
+      <h2>Results</h2>
+      <div id="results-body"></div>
+      <img id="annotated-img" class="preview" />
+    </div>
+
+  </div><!-- /panel-analyze -->
+
+  <!-- ═══════════════════════════════ COMPARE TAB ═══════════════════════════ -->
+  <div id="panel-compare" style="display:none">
+
+    <div class="card">
+      <h2>About You</h2>
+      <div class="row">
+        <div class="col">
+          <label>Height (cm)</label>
+          <input type="number" id="cmp-height" placeholder="e.g. 177" min="100" max="250" step="0.5" />
+        </div>
+        <div class="col">
+          <label>Sex</label>
+          <select id="cmp-sex">
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div class="col">
+          <h2>Before</h2>
+          <label>Photos (1–8, any angles)</label>
+          <input type="file" id="before-files" accept="image/*" multiple />
+        </div>
+        <div class="col">
+          <h2>After</h2>
+          <label>Photos (1–8, any angles)</label>
+          <input type="file" id="after-files" accept="image/*" multiple />
+        </div>
+      </div>
+    </div>
+
+    <button onclick="doCompare()" id="btn-compare">Compare</button>
+    <span class="spinner" id="spin-compare">Comparing…</span>
+
+    <div class="card" id="compare-card" style="display:none;margin-top:16px;">
+      <h2>Changes</h2>
+      <div id="compare-body"></div>
+    </div>
+
+  </div><!-- /panel-compare -->
 
   <script>
-    function previewBody(input) {
-      const preview = document.getElementById('body-preview');
-      if (input.files && input.files[0]) {
-        preview.src = URL.createObjectURL(input.files[0]);
-        preview.style.display = 'block';
+    // ── Tabs ──────────────────────────────────────────────────────────────────
+    function setTab(name) {
+      ['analyze','compare'].forEach(t => {
+        document.getElementById('panel-' + t).style.display = t === name ? 'block' : 'none';
+        document.getElementById('tab-' + t).classList.toggle('active', t === name);
+      });
+    }
+
+    // ── Phone block toggle ────────────────────────────────────────────────────
+    function togglePhone() {
+      document.getElementById('phone-block').style.display =
+        document.getElementById('use-phone').checked ? 'block' : 'none';
+    }
+
+    function onPhoneSelect() {
+      const val = document.getElementById('phone-select').value;
+      if (val) {
+        const [h, w] = val.split(',');
+        document.getElementById('phone-h-cm').value = h;
+        document.getElementById('phone-w-cm').value = w;
       }
     }
 
-    async function analyzeBody() {
-      const file = document.getElementById('body-file').files[0];
-      if (!file) { alert('Select an image first.'); return; }
-      const visualize = document.getElementById('body-visualize').checked;
+    // Phone dims in INCHES (backend expects inches for phone_height/phone_width)
+    function appendPhoneDims(form) {
+      if (!document.getElementById('use-phone').checked) return;
+      const hcm = parseFloat(document.getElementById('phone-h-cm').value);
+      const wcm = parseFloat(document.getElementById('phone-w-cm').value);
+      if (hcm > 0 && wcm > 0) {
+        form.append('phone_height', (hcm / 2.54).toFixed(3));
+        form.append('phone_width',  (wcm / 2.54).toFixed(3));
+      }
+    }
+
+    // ── File previews ─────────────────────────────────────────────────────────
+    function previewFiles(input, containerId) {
+      const box = document.getElementById(containerId);
+      box.innerHTML = '';
+      for (const file of input.files) {
+        const img = document.createElement('img');
+        img.src = URL.createObjectURL(file);
+        img.style.cssText = 'height:90px;border-radius:6px;object-fit:cover;';
+        box.appendChild(img);
+      }
+    }
+
+    // ── Analyze ───────────────────────────────────────────────────────────────
+    async function doAnalyze() {
+      const files = document.getElementById('analyze-files').files;
+      if (!files.length) { alert('Select at least one photo.'); return; }
+
+      const heightCm = parseFloat(document.getElementById('height-cm').value);
+      if (!(heightCm > 0)) { alert('Enter your height in cm.'); return; }
 
       const form = new FormData();
-      form.append('image', file);
-      form.append('visualize', visualize ? 'true' : 'false');
+      for (const f of files) form.append('images', f);
+      form.append('height_cm', heightCm);
+      form.append('sex', document.getElementById('sex').value);
+      appendPhoneDims(form);
+      if (document.getElementById('visualize').checked) form.append('visualize', 'true');
 
-      const resultEl    = document.getElementById('body-result');
-      const annotatedEl = document.getElementById('body-annotated');
-      resultEl.innerHTML = 'Analyzing…';
-      annotatedEl.style.display = 'none';
-
+      setBusy('analyze', true);
       try {
         const res  = await fetch('/api/body-analyze', { method: 'POST', body: form });
         const data = await res.json();
-
-        if (data.success) {
-          let html = `<div style="margin-bottom:8px;"><span class="badge green">Detected</span> confidence: ${(data.confidence * 100).toFixed(0)}%</div>`;
-          html += '<table class="ratio-table">';
-          for (const [k, v] of Object.entries(data.ratios)) {
-            html += `<tr><td>${k.replace(/_/g,' ')}</td><td>${v ?? '—'}</td></tr>`;
-          }
-          html += '</table>';
-          resultEl.innerHTML = html;
-
-          if (data.visualization) {
-            annotatedEl.src = 'data:image/jpeg;base64,' + data.visualization;
-            annotatedEl.style.display = 'block';
-          }
-        } else {
-          resultEl.innerHTML = `<div class="result error"><pre>${data.error}</pre></div>`;
-        }
-      } catch (e) {
-        resultEl.innerHTML = `<div class="result error"><pre>${e}</pre></div>`;
+        renderResults(data);
+      } catch(e) {
+        renderResults({ success: false, error: String(e) });
+      } finally {
+        setBusy('analyze', false);
       }
     }
 
-    async function compareBodies() {
-      const before = document.getElementById('before-file').files[0];
-      const after  = document.getElementById('after-file').files[0];
-      if (!before || !after) { alert('Select both photos.'); return; }
+    // ── Render results ────────────────────────────────────────────────────────
+    const CIRC_LABELS = {
+      neck: 'Neck', chest: 'Chest',
+      waist: 'Waist', hip: 'Hip',
+      bicep_l: 'Bicep (Left)', bicep_r: 'Bicep (Right)',
+      forearm_l: 'Forearm (Left)', forearm_r: 'Forearm (Right)',
+      thigh_l: 'Thigh (Left)', thigh_r: 'Thigh (Right)',
+      calf_l: 'Calf (Left)', calf_r: 'Calf (Right)',
+    };
+
+    const RATIO_LABELS = {
+      shoulder_to_waist: 'Shoulder-to-Waist ratio',
+      shoulder_to_hip:   'Shoulder-to-Hip ratio',
+      chest_to_waist:    'Chest-to-Waist ratio',
+      waist_to_hip:      'Waist-to-Hip ratio',
+      leg_to_torso:      'Leg-to-Torso ratio',
+    };
+
+    function bfCategory(pct, sex) {
+      if (sex === 'female') {
+        if (pct < 14) return 'Essential fat';
+        if (pct < 21) return 'Athletic';
+        if (pct < 25) return 'Fitness';
+        if (pct < 32) return 'Average';
+        return 'Obese';
+      } else {
+        if (pct < 6)  return 'Essential fat';
+        if (pct < 14) return 'Athletic';
+        if (pct < 18) return 'Fitness';
+        if (pct < 25) return 'Average';
+        return 'Obese';
+      }
+    }
+
+    function renderResults(data) {
+      const card = document.getElementById('results-card');
+      const body = document.getElementById('results-body');
+      const img  = document.getElementById('annotated-img');
+      card.style.display = 'block';
+      img.style.display = 'none';
+
+      if (!data.success) {
+        body.innerHTML = `<p style="color:#f87171">${data.error || 'Unknown error'}</p>`;
+        return;
+      }
+
+      let html = '';
+
+      // Calibration badge
+      const cal = data.calibration || {};
+      const calMethod = cal.method || 'none';
+      const badgeCls  = calMethod === 'aruco' ? 'green' : calMethod === 'phone' ? 'amber' : 'red';
+      const badgeTxt  = calMethod === 'aruco' ? 'ArUco calibrated' :
+                        calMethod === 'phone' ? 'Phone calibrated (fallback)' : 'No scale — depth ratios only';
+      html += `<div style="margin-bottom:14px;">
+        <span class="badge ${badgeCls}">${badgeTxt}</span>`;
+      if (cal.pixels_per_cm) html += ` <span style="color:#555;font-size:0.78rem">${cal.pixels_per_cm.toFixed(1)} px/cm</span>`;
+      html += `</div>`;
+
+      // Photo types
+      if (data.photo_types && typeof data.photo_types === 'object') {
+        const typeVals = Object.values(data.photo_types);
+        if (typeVals.length) {
+          const counts = {};
+          typeVals.forEach(t => counts[t] = (counts[t] || 0) + 1);
+          const types = Object.entries(counts).map(([t, n]) =>
+            `<span class="badge blue" style="margin-right:4px">${n}× ${t}</span>`).join('');
+          html += `<div style="margin-bottom:12px;">${types}</div>`;
+        }
+      }
+
+      // Body fat %
+      const bfPct = data.body_fat_pct;
+      const sex   = data.sex || document.getElementById('sex').value;
+      if (bfPct != null) {
+        const cat = bfCategory(bfPct, sex);
+        html += `<div style="margin-bottom:16px;padding:14px 16px;background:#0f1f0f;border-radius:8px;border:1px solid #1a3a1a;">
+          <span class="bf-big">${bfPct.toFixed(1)}%</span>
+          <span class="bf-cat">${cat}</span>
+          <div style="color:#555;font-size:0.75rem;margin-top:4px;">U.S. Navy Body Fat Formula</div>
+        </div>`;
+      }
+
+      // Circumferences
+      const circs = data.circumferences || {};
+      if (Object.keys(circs).length) {
+        html += `<div class="section-title">Circumferences (cm)</div><table>`;
+        for (const [k, v] of Object.entries(CIRC_LABELS)) {
+          const entry = circs[k];
+          if (entry != null) {
+            const val = typeof entry === 'object' ? entry.value : entry;
+            const note = typeof entry === 'object' ? entry.note : '';
+            html += `<tr><td class="lbl">${v}</td><td class="val">${val != null ? val.toFixed(1) + ' cm' : '—'}</td></tr>`;
+            if (note) html += `<tr><td colspan="2" class="note">${note}</td></tr>`;
+          }
+        }
+        html += `</table>`;
+      }
+
+      // Skeletal ratios
+      const ratios = data.skeletal_ratios || {};
+      if (Object.keys(ratios).length) {
+        html += `<div class="section-title">Skeletal Ratios</div><table>`;
+        for (const [k, label] of Object.entries(RATIO_LABELS)) {
+          if (ratios[k] != null) {
+            html += `<tr><td class="lbl">${label}</td><td class="val">${ratios[k].toFixed(2)}</td></tr>`;
+          }
+        }
+        html += `</table>`;
+      }
+
+      // Warnings
+      if (data.warnings && data.warnings.length) {
+        html += `<div class="warn-box">${data.warnings.join('<br/>')}</div>`;
+      }
+
+      body.innerHTML = html;
+
+      if (data.visualization) {
+        img.src = 'data:image/jpeg;base64,' + data.visualization;
+        img.style.display = 'block';
+      }
+    }
+
+    // ── Compare ───────────────────────────────────────────────────────────────
+    async function doCompare() {
+      const beforeFiles = document.getElementById('before-files').files;
+      const afterFiles  = document.getElementById('after-files').files;
+      if (!beforeFiles.length || !afterFiles.length) {
+        alert('Select before AND after photos.'); return;
+      }
+
+      const heightCm = parseFloat(document.getElementById('cmp-height').value);
+      if (!(heightCm > 0)) { alert('Enter your height in cm.'); return; }
 
       const form = new FormData();
-      form.append('before', before);
-      form.append('after', after);
+      for (const f of beforeFiles) form.append('before_images', f);
+      for (const f of afterFiles)  form.append('after_images',  f);
+      form.append('height_cm', heightCm);
+      form.append('sex', document.getElementById('cmp-sex').value);
 
-      const resultEl = document.getElementById('compare-result');
-      resultEl.innerHTML = 'Comparing…';
-
+      setBusy('compare', true);
       try {
         const res  = await fetch('/api/body-compare', { method: 'POST', body: form });
         const data = await res.json();
-
-        if (data.success) {
-          let html = '<table class="ratio-table"><tr style="color:#94a3b8"><td>Metric</td><td>Before</td><td>After</td><td>Change</td></tr>';
-          for (const [k, v] of Object.entries(data.deltas)) {
-            const sign  = v.change_pct >= 0 ? '+' : '';
-            const color = v.change_pct >= 0 ? '#4ade80' : '#f87171';
-            html += `<tr>
-              <td>${k.replace(/_/g,' ')}</td>
-              <td>${v.before}</td>
-              <td>${v.after}</td>
-              <td style="color:${color}">${sign}${v.change_pct}%</td>
-            </tr>`;
-          }
-          html += '</table>';
-          resultEl.innerHTML = html;
-        } else {
-          resultEl.innerHTML = `<div class="result error"><pre>${data.error}</pre></div>`;
-        }
-      } catch (e) {
-        resultEl.innerHTML = `<div class="result error"><pre>${e}</pre></div>`;
+        renderCompare(data);
+      } catch(e) {
+        document.getElementById('compare-body').innerHTML = `<p style="color:#f87171">${e}</p>`;
+      } finally {
+        setBusy('compare', false);
       }
+    }
+
+    function renderCompare(data) {
+      const card = document.getElementById('compare-card');
+      const el   = document.getElementById('compare-body');
+      card.style.display = 'block';
+
+      if (!data.success) {
+        el.innerHTML = `<p style="color:#f87171">${data.error || 'Unknown error'}</p>`;
+        return;
+      }
+
+      // API returns deltas directly: {circumferences: {k: {before,after,unit,change,change_pct}}, body_fat_pct: {before,after,change}}
+      const circs = data.circumferences || {};
+
+      let html = `<div class="section-title" style="padding-top:0;border-top:none">Circumferences (cm)</div>`;
+      html += `<table><tr style="color:#555;font-size:0.78rem">
+        <td>Measurement</td><td style="text-align:right">Before</td>
+        <td style="text-align:right">After</td><td style="text-align:right">Change</td></tr>`;
+
+      for (const [k, v] of Object.entries(circs)) {
+        const cls  = v.change <= 0 ? 'delta-neg' : 'delta-pos';
+        const sign = v.change >= 0 ? '+' : '';
+        html += `<tr>
+          <td class="lbl">${CIRC_LABELS[k] || k}</td>
+          <td class="val">${v.before}</td>
+          <td class="val">${v.after}</td>
+          <td class="val ${cls}">${sign}${v.change} (${sign}${v.change_pct}%)</td>
+        </tr>`;
+      }
+      html += `</table>`;
+
+      // BF% comparison
+      const bf = data.body_fat_pct;
+      if (bf && bf.before != null && bf.after != null) {
+        const cls  = bf.change <= 0 ? 'delta-neg' : 'delta-pos';
+        const sign = bf.change >= 0 ? '+' : '';
+        html += `<div class="section-title">Body Fat %</div><table><tr>
+          <td class="lbl">Body Fat %</td>
+          <td class="val">${bf.before.toFixed(1)}%</td>
+          <td class="val">${bf.after.toFixed(1)}%</td>
+          <td class="val ${cls}">${sign}${bf.change.toFixed(1)}pp</td>
+        </tr></table>`;
+      }
+
+      el.innerHTML = html;
+    }
+
+    // ── Utility ───────────────────────────────────────────────────────────────
+    function setBusy(id, busy) {
+      document.getElementById('btn-' + id).disabled = busy;
+      document.getElementById('spin-' + id).style.display = busy ? 'inline' : 'none';
     }
   </script>
 </body>
