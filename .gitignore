@@ -1,0 +1,19 @@
+# MediaPipe model files (large, auto-downloaded on first run)
+models/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Local test/dev scripts
+test_pushup.py
+
+# Claude Code local config
+.claude/
+
+# Common Python junk
+*.egg-info/
+.env
+venv/
+.venv/
