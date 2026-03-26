@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CV Fitness App</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #111; color: #eee; padding: 24px; }
+    h1 { margin-bottom: 8px; font-size: 1.6rem; }
+    h2 { font-size: 1.1rem; margin-bottom: 12px; color: #aaa; }
+    .card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+    label { display: block; margin-bottom: 6px; font-size: 0.85rem; color: #aaa; }
+    input[type=file] { width: 100%; padding: 8px; background: #222; border: 1px solid #333; border-radius: 6px; color: #eee; }
+    button { padding: 10px 22px; background: #2563eb; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 0.95rem; }
+    button:hover { background: #1d4ed8; }
+    .result { margin-top: 16px; background: #0d0d0d; border-radius: 8px; padding: 14px; font-size: 0.85rem; }
+    .result pre { white-space: pre-wrap; word-break: break-word; color: #4ade80; }
+    .error pre { color: #f87171; }
+    .row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+    .col { flex: 1; min-width: 260px; }
+    img.preview { max-width: 100%; border-radius: 8px; margin-top: 12px; }
+    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.78rem; font-weight: 600; }
+    .badge.green { background: #14532d; color: #4ade80; }
+    .ratio-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    .ratio-table td { padding: 5px 8px; border-bottom: 1px solid #222; font-size: 0.88rem; }
+    .ratio-table td:first-child { color: #94a3b8; }
+    .ratio-table td:last-child { color: #fff; font-weight: 600; text-align: right; }
+  </style>
+</head>
+<body>
+  <h1>CV Fitness App</h1>
+  <p style="color:#666;margin-bottom:20px;font-size:0.9rem;">Computer Vision — Group 4</p>
+
+  <div class="row">
+    <div class="col">
+      <div class="card">
+        <h2>Analyze a Photo</h2>
+        <label>Upload front-facing photo</label>
+        <input type="file" id="body-file" accept="image/*" onchange="previewBody(this)" />
+        <img id="body-preview" class="preview" style="display:none" />
+        <br/><br/>
+        <label><input type="checkbox" id="body-visualize" /> Include annotated image</label>
+        <br/><br/>
+        <button onclick="analyzeBody()">Analyze</button>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card">
+        <h2>Results</h2>
+        <div id="body-result" style="color:#555;font-size:0.9rem;">Upload a photo and click Analyze.</div>
+        <img id="body-annotated" class="preview" style="display:none" />
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Before / After Comparison</h2>
+    <div class="row">
+      <div class="col">
+        <label>Before photo</label>
+        <input type="file" id="before-file" accept="image/*" />
+      </div>
+      <div class="col">
+        <label>After photo</label>
+        <input type="file" id="after-file" accept="image/*" />
+      </div>
+    </div>
+    <br/>
+    <button onclick="compareBodies()">Compare</button>
+    <div id="compare-result" style="color:#555;font-size:0.9rem;margin-top:12px;">Upload both photos and click Compare.</div>
+  </div>
+
+  <script>
+    function previewBody(input) {
+      const preview = document.getElementById('body-preview');
+      if (input.files && input.files[0]) {
+        preview.src = URL.createObjectURL(input.files[0]);
+        preview.style.display = 'block';
+      }
+    }
+
+    async function analyzeBody() {
+      const file = document.getElementById('body-file').files[0];
+      if (!file) { alert('Select an image first.'); return; }
+      const visualize = document.getElementById('body-visualize').checked;
+
+      const form = new FormData();
+      form.append('image', file);
+      form.append('visualize', visualize ? 'true' : 'false');
+
+      const resultEl    = document.getElementById('body-result');
+      const annotatedEl = document.getElementById('body-annotated');
+      resultEl.innerHTML = 'Analyzing…';
+      annotatedEl.style.display = 'none';
+
+      try {
+        const res  = await fetch('/api/body-analyze', { method: 'POST', body: form });
+        const data = await res.json();
+
+        if (data.success) {
+          let html = `<div style="margin-bottom:8px;"><span class="badge green">Detected</span> confidence: ${(data.confidence * 100).toFixed(0)}%</div>`;
+          html += '<table class="ratio-table">';
+          for (const [k, v] of Object.entries(data.ratios)) {
+            html += `<tr><td>${k.replace(/_/g,' ')}</td><td>${v ?? '—'}</td></tr>`;
+          }
+          html += '</table>';
+          resultEl.innerHTML = html;
+
+          if (data.visualization) {
+            annotatedEl.src = 'data:image/jpeg;base64,' + data.visualization;
+            annotatedEl.style.display = 'block';
+          }
+        } else {
+          resultEl.innerHTML = `<div class="result error"><pre>${data.error}</pre></div>`;
+        }
+      } catch (e) {
+        resultEl.innerHTML = `<div class="result error"><pre>${e}</pre></div>`;
+      }
+    }
+
+    async function compareBodies() {
+      const before = document.getElementById('before-file').files[0];
+      const after  = document.getElementById('after-file').files[0];
+      if (!before || !after) { alert('Select both photos.'); return; }
+
+      const form = new FormData();
+      form.append('before', before);
+      form.append('after', after);
+
+      const resultEl = document.getElementById('compare-result');
+      resultEl.innerHTML = 'Comparing…';
+
+      try {
+        const res  = await fetch('/api/body-compare', { method: 'POST', body: form });
+        const data = await res.json();
+
+        if (data.success) {
+          let html = '<table class="ratio-table"><tr style="color:#94a3b8"><td>Metric</td><td>Before</td><td>After</td><td>Change</td></tr>';
+          for (const [k, v] of Object.entries(data.deltas)) {
+            const sign  = v.change_pct >= 0 ? '+' : '';
+            const color = v.change_pct >= 0 ? '#4ade80' : '#f87171';
+            html += `<tr>
+              <td>${k.replace(/_/g,' ')}</td>
+              <td>${v.before}</td>
+              <td>${v.after}</td>
+              <td style="color:${color}">${sign}${v.change_pct}%</td>
+            </tr>`;
+          }
+          html += '</table>';
+          resultEl.innerHTML = html;
+        } else {
+          resultEl.innerHTML = `<div class="result error"><pre>${data.error}</pre></div>`;
+        }
+      } catch (e) {
+        resultEl.innerHTML = `<div class="result error"><pre>${e}</pre></div>`;
+      }
+    }
+  </script>
+</body>
+</html>
