@@ -96,6 +96,7 @@ class PushupTracker:
         self.state                = "up"   # "up" | "down"
         self.last_rep_form_score  = None
         self._rep_scores: list[float] = []
+        self.running              = False  # must call start() before reps are counted
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
@@ -127,6 +128,7 @@ class PushupTracker:
         output = {
             "rep_count":           self.rep_count,
             "state":               self.state,
+            "running":             self.running,
             "elbow_angle":         None,
             "form_score":          None,
             "last_rep_form_score": self.last_rep_form_score,
@@ -158,14 +160,15 @@ class PushupTracker:
         output["elbow_angle"] = round(elbow_angle, 1)
 
         # ── Rep state machine ──────────────────────────────────────────────────
-        if self.state == "up" and elbow_angle < self.DOWN_ANGLE:
-            self.state = "down"
-        elif self.state == "down" and elbow_angle > self.UP_ANGLE:
-            self.state = "up"
-            self.rep_count += 1
-            if self._rep_scores:
-                self.last_rep_form_score = round(float(np.mean(self._rep_scores)), 1)
-                self._rep_scores = []
+        if self.running:
+            if self.state == "up" and elbow_angle < self.DOWN_ANGLE:
+                self.state = "down"
+            elif self.state == "down" and elbow_angle > self.UP_ANGLE:
+                self.state = "up"
+                self.rep_count += 1
+                if self._rep_scores:
+                    self.last_rep_form_score = round(float(np.mean(self._rep_scores)), 1)
+                    self._rep_scores = []
 
         output["state"]               = self.state
         output["rep_count"]           = self.rep_count
@@ -218,6 +221,15 @@ class PushupTracker:
         output["annotated_frame"] = annotated
         return output
 
+    def start(self) -> None:
+        """Begin counting reps."""
+        self.reset()
+        self.running = True
+
+    def stop(self) -> None:
+        """Pause counting without closing the detector."""
+        self.running = False
+
     def reset(self) -> None:
         """Reset rep count and state (call between sets)."""
         self.rep_count           = 0
@@ -245,7 +257,10 @@ class PushupTracker:
         red   = (0, 60, 220)
         white = (255, 255, 255)
 
-        cv2.putText(frame, f"Reps: {data['rep_count']}", (12, 44), font, 1.3, green, 3)
+        status_text = "● TRACKING" if data.get("running") else "❚❚ PAUSED — press S to start"
+        status_color = green if data.get("running") else amber
+        cv2.putText(frame, status_text, (12, 30), font, 0.65, status_color, 2)
+        cv2.putText(frame, f"Reps: {data['rep_count']}", (12, 68), font, 1.3, green, 3)
 
         if data["elbow_angle"] is not None:
             cv2.putText(frame, f"Elbow: {data['elbow_angle']:.0f}", (12, 84), font, 0.9, white, 2)
