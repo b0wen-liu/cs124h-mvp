@@ -60,7 +60,7 @@ def _draw_skeleton(image: np.ndarray, landmarks, w: int, h: int) -> None:
             cv2.line(image, p1, p2, (180, 180, 180), 2)
     for lm in landmarks:
         if lm.visibility > _MIN_VIS:
-            cv2.circle(image, (int(lm.x * w), int(lm.y * h)), 4, (0, 230, 230), -1)
+            cv2.circle(image, (int(lm.x * w), int(lm.y * h)), 4, (0, 82, 255), -1)
 
 
 class PushupTracker:
@@ -97,6 +97,7 @@ class PushupTracker:
         self.last_rep_form_score  = None
         self._rep_scores: list[float] = []
         self.running              = False  # must call start() before reps are counted
+        self._arms_confirmed_up   = False  # must see straight arms before first rep
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
@@ -138,7 +139,7 @@ class PushupTracker:
         }
 
         if not result.pose_landmarks:
-            output["feedback"].append("No pose detected — position yourself in frame")
+            output["feedback"].append("No pose detected - position yourself in frame")
             self._draw_hud(output["annotated_frame"], output)
             return output
 
@@ -159,16 +160,24 @@ class PushupTracker:
 
         output["elbow_angle"] = round(elbow_angle, 1)
 
+        mid_shoulder_raw = (pt(11) + pt(12)) / 2
+        mid_ankle_raw    = (pt(27) + pt(28)) / 2
+
         # ── Rep state machine ──────────────────────────────────────────────────
+        # Require arms confirmed straight first — prevents counting a rep just
+        # by starting with elbows already bent (works for floor & wall pushups).
         if self.running:
-            if self.state == "up" and elbow_angle < self.DOWN_ANGLE:
-                self.state = "down"
-            elif self.state == "down" and elbow_angle > self.UP_ANGLE:
-                self.state = "up"
-                self.rep_count += 1
-                if self._rep_scores:
-                    self.last_rep_form_score = round(float(np.mean(self._rep_scores)), 1)
-                    self._rep_scores = []
+            if elbow_angle > self.UP_ANGLE:
+                self._arms_confirmed_up = True
+            if self._arms_confirmed_up:
+                if self.state == "up" and elbow_angle < self.DOWN_ANGLE:
+                    self.state = "down"
+                elif self.state == "down" and elbow_angle > self.UP_ANGLE:
+                    self.state = "up"
+                    self.rep_count += 1
+                    if self._rep_scores:
+                        self.last_rep_form_score = round(float(np.mean(self._rep_scores)), 1)
+                        self._rep_scores = []
 
         output["state"]               = self.state
         output["rep_count"]           = self.rep_count
@@ -178,9 +187,10 @@ class PushupTracker:
         form_score = 100.0
         feedback   = []
 
-        mid_shoulder = (pt(11) + pt(12)) / 2
+        mid_shoulder = mid_shoulder_raw
         mid_hip      = (pt(23) + pt(24)) / 2
-        mid_ankle    = (pt(27) + pt(28)) / 2
+        mid_ankle    = mid_ankle_raw
+
 
         # 1. Hip alignment: shoulder → hip → ankle should be colinear
         body_vec = mid_ankle - mid_shoulder
@@ -192,14 +202,14 @@ class PushupTracker:
             if dev_pct > 8:
                 form_score -= min(30, dev_pct * 1.5)
                 if mid_hip[1] > projected[1] + 5:
-                    feedback.append("Fix your hips — keep body straight")
+                    feedback.append("Fix your hips - keep body straight")
                 else:
-                    feedback.append("Don't pike — lower your hips")
+                    feedback.append("Don't pike - lower your hips")
 
         # 2. Depth: penalise if "down" state but not deep enough
         if self.state == "down" and elbow_angle > self.DOWN_ANGLE + 20:
             form_score -= 20
-            feedback.append("Go lower — aim for 90° elbow bend")
+            feedback.append("Go lower - aim for 90 deg elbow bend")
 
         # 3. Elbow flare (both arms visible)
         if left_vis > 0.4 and right_vis > 0.4:
@@ -207,7 +217,7 @@ class PushupTracker:
             elbow_w    = abs(lm[13].x - lm[14].x)
             if shoulder_w > 1e-6 and elbow_w > shoulder_w * 1.4:
                 form_score -= 15
-                feedback.append("Tuck your elbows — they're flaring out")
+                feedback.append("Tuck your elbows - they're flaring out")
 
         form_score = max(0.0, form_score)
         output["form_score"] = round(form_score, 1)
@@ -232,10 +242,11 @@ class PushupTracker:
 
     def reset(self) -> None:
         """Reset rep count and state (call between sets)."""
-        self.rep_count           = 0
-        self.state               = "up"
-        self.last_rep_form_score = None
-        self._rep_scores         = []
+        self.rep_count            = 0
+        self.state                = "up"
+        self.last_rep_form_score  = None
+        self._rep_scores          = []
+        self._arms_confirmed_up   = False
 
     def close(self) -> None:
         self._detector.close()
@@ -250,14 +261,16 @@ class PushupTracker:
 
     @staticmethod
     def _draw_hud(frame: np.ndarray, data: dict) -> None:
-        h, w  = frame.shape[:2]
-        font  = cv2.FONT_HERSHEY_SIMPLEX
-        green = (0, 220, 0)
-        amber = (0, 165, 255)
-        red   = (0, 60, 220)
-        white = (255, 255, 255)
+        h, w   = frame.shape[:2]
+        font   = cv2.FONT_HERSHEY_SIMPLEX
+        orange = (0, 82, 255)    # Illini Orange #FF5200
+        navy   = (75, 41, 19)    # Illini Blue  #13294B
+        green  = orange          # use orange as the "good" color
+        amber  = orange          # feedback text in orange
+        red    = (39, 74, 232)   # deeper orange-red for bad form
+        white  = (255, 255, 255)
 
-        status_text = "● TRACKING" if data.get("running") else "❚❚ PAUSED — press S to start"
+        status_text = "[TRACKING]" if data.get("running") else "|| PAUSED - press S to start"
         status_color = green if data.get("running") else amber
         cv2.putText(frame, status_text, (12, 30), font, 0.65, status_color, 2)
         cv2.putText(frame, f"Reps: {data['rep_count']}", (12, 68), font, 1.3, green, 3)
@@ -267,13 +280,13 @@ class PushupTracker:
 
         if data["form_score"] is not None:
             score = data["form_score"]
-            color = green if score >= 80 else (amber if score >= 55 else red)
+            color = white if score >= 80 else (orange if score >= 55 else red)
             cv2.putText(frame, f"Form: {score:.0f}/100", (12, 120), font, 0.9, color, 2)
 
         if data["last_rep_form_score"] is not None:
             cv2.putText(frame, f"Last rep: {data['last_rep_form_score']:.0f}", (12, 152), font, 0.7, white, 2)
 
-        state_color = green if data.get("state") == "up" else red
+        state_color = white if data.get("state") == "up" else orange
         cv2.putText(frame, (data.get("state") or "up").upper(), (w - 110, 44), font, 1.3, state_color, 3)
 
         for i, msg in enumerate(data.get("feedback", [])):
