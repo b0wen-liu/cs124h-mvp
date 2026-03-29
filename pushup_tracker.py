@@ -99,6 +99,12 @@ class PushupTracker:
         self.running              = False  # must call start() before reps are counted
         self._arms_confirmed_up   = False  # must see straight arms before first rep
 
+        # Session / set tracking
+        self.set_history: list[dict]           = []
+        self._session_form_scores: list[float] = []
+        self._rep_timestamps: list[float]      = []
+        self._set_rep_scores: list[float]      = []
+
     # ── Public API ─────────────────────────────────────────────────────────────
 
     def process_frame(self, frame: np.ndarray) -> dict:
@@ -127,20 +133,22 @@ class PushupTracker:
         result   = self._detector.detect_for_video(mp_image, timestamp_ms)
 
         output = {
-            "rep_count":           self.rep_count,
-            "state":               self.state,
-            "running":             self.running,
-            "elbow_angle":         None,
-            "form_score":          None,
-            "last_rep_form_score": self.last_rep_form_score,
-            "feedback":            [],
-            "pose_detected":       False,
-            "annotated_frame":     frame.copy(),
+            "rep_count":             self.rep_count,
+            "state":                 self.state,
+            "running":               self.running,
+            "elbow_angle":           None,
+            "form_score":            None,
+            "last_rep_form_score":   self.last_rep_form_score,
+            "session_avg_form_score": self.session_avg_form_score,
+            "reps_per_minute":        self.reps_per_minute,
+            "set_history":            list(self.set_history),
+            "feedback":              [],
+            "pose_detected":         False,
+            "annotated_frame":       frame.copy(),
         }
 
         if not result.pose_landmarks:
             output["feedback"].append("No pose detected - position yourself in frame")
-            self._draw_hud(output["annotated_frame"], output)
             return output
 
         output["pose_detected"] = True
@@ -177,11 +185,17 @@ class PushupTracker:
                     self.rep_count += 1
                     if self._rep_scores:
                         self.last_rep_form_score = round(float(np.mean(self._rep_scores)), 1)
+                        self._set_rep_scores.append(self.last_rep_form_score)
+                        self._session_form_scores.append(self.last_rep_form_score)
+                        self._rep_timestamps.append(time.monotonic())
                         self._rep_scores = []
 
-        output["state"]               = self.state
-        output["rep_count"]           = self.rep_count
-        output["last_rep_form_score"] = self.last_rep_form_score
+        output["state"]                  = self.state
+        output["rep_count"]              = self.rep_count
+        output["last_rep_form_score"]    = self.last_rep_form_score
+        output["session_avg_form_score"] = self.session_avg_form_score
+        output["reps_per_minute"]        = self.reps_per_minute
+        output["set_history"]            = list(self.set_history)
 
         # ── Form analysis ──────────────────────────────────────────────────────
         form_score = 100.0
@@ -224,29 +238,60 @@ class PushupTracker:
         output["feedback"]   = feedback
         self._rep_scores.append(form_score)
 
-        # ── Draw skeleton + HUD ────────────────────────────────────────────────
+        # ── Draw skeleton ──────────────────────────────────────────────────────
         annotated = frame.copy()
         _draw_skeleton(annotated, lm, w, h)
-        self._draw_hud(annotated, output)
         output["annotated_frame"] = annotated
         return output
 
+    @property
+    def session_avg_form_score(self) -> float | None:
+        if not self._session_form_scores:
+            return None
+        return round(float(np.mean(self._session_form_scores)), 1)
+
+    @property
+    def reps_per_minute(self) -> float | None:
+        if len(self._rep_timestamps) < 2:
+            return None
+        recent = self._rep_timestamps[-6:]
+        duration = recent[-1] - recent[0]
+        if duration < 0.5:
+            return None
+        return round((len(recent) - 1) / duration * 60.0, 1)
+
     def start(self) -> None:
-        """Begin counting reps."""
-        self.reset()
-        self.running = True
+        """Begin a new set — saves previous set to history, then resets per-set counters."""
+        if self.rep_count > 0:
+            avg = round(float(np.mean(self._set_rep_scores)), 1) if self._set_rep_scores else None
+            self.set_history.append({
+                "set":      len(self.set_history) + 1,
+                "reps":     self.rep_count,
+                "avg_form": avg,
+            })
+        self.rep_count           = 0
+        self.state               = "up"
+        self.last_rep_form_score = None
+        self._rep_scores         = []
+        self._set_rep_scores     = []
+        self._arms_confirmed_up  = False
+        self.running             = True
 
     def stop(self) -> None:
         """Pause counting without closing the detector."""
         self.running = False
 
     def reset(self) -> None:
-        """Reset rep count and state (call between sets)."""
+        """Full session reset — clears rep count, set history, and all stats."""
         self.rep_count            = 0
         self.state                = "up"
         self.last_rep_form_score  = None
         self._rep_scores          = []
+        self._set_rep_scores      = []
         self._arms_confirmed_up   = False
+        self.set_history          = []
+        self._session_form_scores = []
+        self._rep_timestamps      = []
 
     def close(self) -> None:
         self._detector.close()

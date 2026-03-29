@@ -60,6 +60,7 @@
     <button class="active" onclick="setTab('analyze')" id="tab-analyze">Measure</button>
     <button onclick="setTab('compare')" id="tab-compare">Before / After</button>
     <button onclick="setTab('pushup')" id="tab-pushup">Pushup Tracker</button>
+    <button onclick="setTab('sessions')" id="tab-sessions">Sessions</button>
   </div>
 
   <!-- ═══════════════════════════════ MEASURE TAB ═══════════════════════════ -->
@@ -220,50 +221,453 @@
     </div>
 
     <!-- Controls -->
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px;">
       <button id="btn-camera" onclick="toggleCamera()">Start Camera</button>
       <button id="btn-track" onclick="toggleTracking()" disabled>Start Tracking</button>
       <button id="btn-reset" onclick="resetTracker()" disabled>Reset</button>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+        <label style="color:#888;font-size:0.82rem;margin:0;white-space:nowrap;">Rep Goal:</label>
+        <input type="number" id="rep-goal" placeholder="e.g. 20" min="1" max="500"
+               style="width:80px;" oninput="onGoalChange()" />
+      </div>
     </div>
 
-    <!-- Stats -->
+    <!-- Main stats card -->
     <div class="card">
-      <div class="row" style="text-align:center;">
+
+      <!-- Row 1: Reps · Form · State · Pace -->
+      <div class="row" style="text-align:center;margin-bottom:16px;">
         <div class="col">
-          <div id="stat-reps" style="font-size:3rem;font-weight:800;color:#4ade80;">0</div>
+          <div id="stat-reps" style="font-size:3rem;font-weight:800;color:#ff5200;">0</div>
           <div style="color:#555;font-size:0.78rem;text-transform:uppercase;letter-spacing:.06em;">Reps</div>
+          <div id="goal-bar-wrap" style="display:none;margin-top:6px;">
+            <div style="background:#222;border-radius:4px;height:4px;overflow:hidden;">
+              <div id="goal-bar" style="height:100%;background:#ff5200;width:0%;transition:width 0.3s;border-radius:4px;"></div>
+            </div>
+            <div id="goal-text" style="font-size:0.7rem;color:#555;margin-top:3px;"></div>
+          </div>
         </div>
         <div class="col">
           <div id="stat-form" style="font-size:2rem;font-weight:700;color:#fff;">—</div>
-          <div style="color:#555;font-size:0.78rem;text-transform:uppercase;letter-spacing:.06em;">Form Score</div>
+          <div style="color:#555;font-size:0.78rem;text-transform:uppercase;letter-spacing:.06em;">Form</div>
         </div>
         <div class="col">
           <div id="stat-state" style="font-size:1.5rem;font-weight:700;color:#fff;">—</div>
           <div style="color:#555;font-size:0.78rem;text-transform:uppercase;letter-spacing:.06em;">State</div>
         </div>
+        <div class="col">
+          <div id="stat-rpm" style="font-size:1.5rem;font-weight:700;color:#fff;">—</div>
+          <div style="color:#555;font-size:0.78rem;text-transform:uppercase;letter-spacing:.06em;">Reps/min</div>
+        </div>
       </div>
-      <div id="pushup-feedback" style="margin-top:14px;min-height:28px;"></div>
+
+      <!-- Row 2: Session timer · Rest timer -->
+      <div style="display:flex;border-top:1px solid #222;border-bottom:1px solid #222;margin-bottom:16px;">
+        <div style="flex:1;padding:10px;text-align:center;border-right:1px solid #222;">
+          <div id="stat-session-time" style="font-size:1.5rem;font-weight:700;color:#fff;font-variant-numeric:tabular-nums;">00:00</div>
+          <div style="color:#555;font-size:0.72rem;text-transform:uppercase;letter-spacing:.06em;">Session</div>
+        </div>
+        <div style="flex:1;padding:10px;text-align:center;">
+          <div id="stat-rest-time" style="font-size:1.5rem;font-weight:700;color:#555;font-variant-numeric:tabular-nums;">—</div>
+          <div style="color:#555;font-size:0.72rem;text-transform:uppercase;letter-spacing:.06em;">Rest</div>
+        </div>
+      </div>
+
+      <!-- Row 3: Session form gauge + feedback -->
+      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+
+        <!-- Circular gauge -->
+        <div style="text-align:center;flex-shrink:0;">
+          <svg width="110" height="110" viewBox="0 0 110 110">
+            <circle cx="55" cy="55" r="46" fill="none" stroke="#222" stroke-width="10"/>
+            <circle id="gauge-circle" cx="55" cy="55" r="46" fill="none"
+                    stroke="#333" stroke-width="10"
+                    stroke-dasharray="289" stroke-dashoffset="289"
+                    transform="rotate(-90 55 55)"
+                    style="transition:stroke-dashoffset 0.6s,stroke 0.6s;stroke-linecap:round;"/>
+            <text id="gauge-score" x="55" y="48" text-anchor="middle" dy="0.35em"
+                  fill="#fff" font-size="20" font-weight="800" font-family="system-ui">—</text>
+            <text x="55" y="70" text-anchor="middle"
+                  fill="#444" font-size="8" font-family="system-ui">SESSION AVG</text>
+          </svg>
+          <div id="gauge-category" style="font-size:0.72rem;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.06em;margin-top:-6px;">—</div>
+        </div>
+
+        <!-- Feedback -->
+        <div style="flex:1;">
+          <div id="pushup-feedback" style="min-height:28px;"></div>
+        </div>
+      </div>
+
+    </div><!-- /main stats card -->
+
+    <!-- Set history card — shown once at least one set is completed -->
+    <div class="card" id="set-history-card" style="display:none;">
+      <h2>Set History</h2>
+      <div id="set-history-body"></div>
     </div>
 
   </div><!-- /panel-pushup -->
+
+  <!-- ═══════════════════════════════ SESSIONS TAB ══════════════════════════ -->
+  <div id="panel-sessions" style="display:none">
+
+    <!-- Summary stats -->
+    <div class="card" id="sessions-summary" style="display:none">
+      <div class="row" style="text-align:center;">
+        <div class="col">
+          <div id="sum-total" style="font-size:2rem;font-weight:800;color:#ff5200;">0</div>
+          <div style="color:#555;font-size:0.78rem;text-transform:uppercase;letter-spacing:.06em;">Sessions</div>
+        </div>
+        <div class="col">
+          <div id="sum-reps" style="font-size:2rem;font-weight:700;color:#fff;">0</div>
+          <div style="color:#555;font-size:0.78rem;text-transform:uppercase;letter-spacing:.06em;">Total Reps</div>
+        </div>
+        <div class="col">
+          <div id="sum-form" style="font-size:2rem;font-weight:700;color:#fff;">—</div>
+          <div style="color:#555;font-size:0.78rem;text-transform:uppercase;letter-spacing:.06em;">Avg Form</div>
+        </div>
+        <div class="col">
+          <div id="sum-best" style="font-size:2rem;font-weight:700;color:#fff;">—</div>
+          <div style="color:#555;font-size:0.78rem;text-transform:uppercase;letter-spacing:.06em;">Best Session</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reps per session bar chart -->
+    <div class="card" id="sessions-chart-card" style="display:none">
+      <h2>Reps per Session <span style="color:#444;font-size:0.72rem;font-weight:400;">(last 10)</span></h2>
+      <div style="display:flex;align-items:flex-end;gap:4px;height:80px;margin-top:10px;" id="sessions-chart"></div>
+      <div style="display:flex;justify-content:space-between;margin-top:4px;">
+        <span style="font-size:0.68rem;color:#444;">older</span>
+        <span style="font-size:0.68rem;color:#444;">recent</span>
+      </div>
+    </div>
+
+    <!-- Form trend -->
+    <div class="card" id="sessions-trend-card" style="display:none">
+      <h2>Form Trend <span style="color:#444;font-size:0.72rem;font-weight:400;">(last 10)</span></h2>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:10px;" id="sessions-trend"></div>
+    </div>
+
+    <!-- Session list -->
+    <div id="sessions-list"></div>
+
+    <!-- Empty state -->
+    <div id="sessions-empty" class="card" style="text-align:center;padding:40px;color:#555;">
+      No sessions yet — start tracking pushups to log your first session!
+    </div>
+
+    <!-- Actions -->
+    <div id="sessions-actions" style="display:none;margin-top:4px;">
+      <button onclick="clearAllSessions()" style="background:#450a0a;color:#f87171;font-size:0.85rem;padding:8px 18px;">Clear All History</button>
+    </div>
+
+  </div><!-- /panel-sessions -->
 
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script>
     // ── Tabs ──────────────────────────────────────────────────────────────────
     function setTab(name) {
-      ['analyze','compare','pushup'].forEach(t => {
+      ['analyze','compare','pushup','sessions'].forEach(t => {
         document.getElementById('panel-' + t).style.display = t === name ? 'block' : 'none';
         document.getElementById('tab-' + t).classList.toggle('active', t === name);
       });
+      if (name === 'sessions') renderSessionsTab();
     }
 
     // ── Pushup Tracker ────────────────────────────────────────────────────────
-    let pushupSocket  = null;
-    let pushupStream  = null;
+    let pushupSocket   = null;
+    let pushupStream   = null;
     let pushupTracking = false;
-    let frameInterval = null;
+    let frameInterval  = null;
     let receivingAnnotated = false;
+    let lastRepCount   = 0;
+    let lastResult     = null;    // most recent result from server
+    let currentSession = null;   // session being recorded right now
 
+    // ── Sessions (localStorage) ───────────────────────────────────────────────
+    function loadSessions() {
+      try { return JSON.parse(localStorage.getItem('pushup_sessions') || '[]'); } catch(e) { return []; }
+    }
+    function saveSessions(arr) {
+      try { localStorage.setItem('pushup_sessions', JSON.stringify(arr.slice(-100))); } catch(e) {}
+    }
+    function beginSession() {
+      currentSession = { startTime: new Date().toISOString(), startMs: Date.now(), peakPace: null };
+    }
+    function finalizeSession() {
+      if (!currentSession) return;
+      const r = lastResult || {};
+      const s = {
+        startTime: currentSession.startTime,
+        endTime:   new Date().toISOString(),
+        duration:  Date.now() - currentSession.startMs,
+        reps:      r.rep_count     || 0,
+        avgForm:   r.session_avg_form_score != null ? parseFloat(r.session_avg_form_score.toFixed(1)) : null,
+        sets:      r.set_history   || [],
+        peakPace:  currentSession.peakPace,
+      };
+      if (s.reps > 0) {
+        const sessions = loadSessions();
+        s.id = sessions.length + 1;
+        sessions.push(s);
+        saveSessions(sessions);
+        if (document.getElementById('panel-sessions').style.display !== 'none') renderSessionsTab();
+      }
+      currentSession = null;
+    }
+    function cancelSession() { currentSession = null; }
+
+    function fmtDuration(ms) {
+      const s = Math.floor(ms / 1000), m = Math.floor(s / 60);
+      return m > 0 ? `${m}m ${String(s % 60).padStart(2,'0')}s` : `${s}s`;
+    }
+    function fmtDate(iso) {
+      const d = new Date(iso);
+      return d.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) + ' · ' +
+             d.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'});
+    }
+    function toggleSessionDetail(idx) {
+      const el    = document.getElementById(`sess-detail-${idx}`);
+      const arrow = document.getElementById(`sess-arrow-${idx}`);
+      const open  = el.style.display !== 'none';
+      el.style.display  = open ? 'none' : 'block';
+      arrow.textContent = open ? '▼' : '▲';
+    }
+    function clearAllSessions() {
+      if (!confirm('Clear all session history? This cannot be undone.')) return;
+      localStorage.removeItem('pushup_sessions');
+      renderSessionsTab();
+    }
+    function renderSessionsTab() {
+      const sessions   = loadSessions();
+      const emptyEl    = document.getElementById('sessions-empty');
+      const sumCard    = document.getElementById('sessions-summary');
+      const chartCard  = document.getElementById('sessions-chart-card');
+      const trendCard  = document.getElementById('sessions-trend-card');
+      const actionsEl  = document.getElementById('sessions-actions');
+      const listEl     = document.getElementById('sessions-list');
+
+      if (sessions.length === 0) {
+        emptyEl.style.display = 'block'; sumCard.style.display = 'none';
+        chartCard.style.display = 'none'; trendCard.style.display = 'none';
+        actionsEl.style.display = 'none'; listEl.innerHTML = '';
+        return;
+      }
+      emptyEl.style.display   = 'none';  sumCard.style.display   = 'block';
+      chartCard.style.display = 'block'; trendCard.style.display = 'block';
+      actionsEl.style.display = 'block';
+
+      // Summary
+      const totalReps  = sessions.reduce((a, s) => a + (s.reps || 0), 0);
+      const formScores = sessions.filter(s => s.avgForm != null).map(s => s.avgForm);
+      const avgForm    = formScores.length ? formScores.reduce((a,b)=>a+b,0)/formScores.length : null;
+      const bestSess   = sessions.reduce((best, s) => (!best || s.reps > best.reps) ? s : best, null);
+      const fc         = avgForm == null ? '#fff' : avgForm >= 80 ? '#4ade80' : avgForm >= 55 ? '#fb923c' : '#f87171';
+      document.getElementById('sum-total').textContent = sessions.length;
+      document.getElementById('sum-reps').textContent  = totalReps;
+      document.getElementById('sum-form').textContent  = avgForm != null ? avgForm.toFixed(1)+'/100' : '—';
+      document.getElementById('sum-form').style.color  = fc;
+      document.getElementById('sum-best').textContent  = bestSess ? `${bestSess.reps} reps` : '—';
+
+      // Bar chart (last 10 sessions)
+      const chartSess = sessions.slice(-10);
+      const maxReps   = Math.max(...chartSess.map(s => s.reps || 0), 1);
+      document.getElementById('sessions-chart').innerHTML = chartSess.map(s => {
+        const pct  = Math.max(4, ((s.reps || 0) / maxReps) * 100);
+        const col  = s.avgForm == null ? '#ff5200' : s.avgForm >= 80 ? '#4ade80' : s.avgForm >= 55 ? '#fb923c' : '#f87171';
+        return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0;">
+          <div title="Session ${s.id}: ${s.reps} reps" style="width:100%;height:${pct}%;background:${col};
+               border-radius:3px 3px 0 0;min-height:4px;cursor:default;opacity:0.85;"></div>
+          <div style="font-size:0.6rem;color:#444;white-space:nowrap;">${s.id}</div>
+        </div>`;
+      }).join('');
+
+      // Form trend dots (last 10 sessions)
+      const trendSess = sessions.slice(-10);
+      document.getElementById('sessions-trend').innerHTML = trendSess.map(s => {
+        const col = s.avgForm == null ? '#333' : s.avgForm >= 80 ? '#4ade80' : s.avgForm >= 55 ? '#fb923c' : '#f87171';
+        const lbl = s.avgForm != null ? s.avgForm.toFixed(0) : '—';
+        return `<div title="Session ${s.id}: form ${lbl}/100" style="display:flex;flex-direction:column;align-items:center;gap:3px;cursor:default;">
+          <div style="width:32px;height:32px;border-radius:50%;background:${col};opacity:0.85;
+               display:flex;align-items:center;justify-content:center;font-size:0.65rem;font-weight:700;color:#111;">${lbl}</div>
+          <div style="font-size:0.6rem;color:#444;">#${s.id}</div>
+        </div>`;
+      }).join('<div style="flex-shrink:0;width:4px;height:2px;background:#333;margin-bottom:20px;"></div>');
+
+      // Session list (newest first)
+      listEl.innerHTML = [...sessions].reverse().map((s, ri) => {
+        const origIdx   = sessions.length - 1 - ri;
+        const sfc       = s.avgForm == null ? '#555' : s.avgForm >= 80 ? '#4ade80' : s.avgForm >= 55 ? '#fb923c' : '#f87171';
+        const formStr   = s.avgForm != null ? s.avgForm.toFixed(1)+'/100' : '—';
+        const durStr    = s.duration ? fmtDuration(s.duration) : '—';
+        const dateStr   = s.startTime ? fmtDate(s.startTime) : '—';
+        const setsHtml  = (s.sets || []).length > 0
+          ? s.sets.map(st => {
+              const stc = st.avg_form == null ? '#888' : st.avg_form >= 80 ? '#4ade80' : st.avg_form >= 55 ? '#fb923c' : '#f87171';
+              return `<span style="display:inline-block;margin-right:12px;margin-bottom:4px;font-size:0.82rem;color:#888;">
+                Set ${st.set}: <strong style="color:#fff;">${st.reps} reps</strong>
+                ${st.avg_form != null ? `<span style="color:${stc}"> · form ${st.avg_form.toFixed(0)}</span>` : ''}
+              </span>`;
+            }).join('')
+          : `<span style="color:#555;font-size:0.82rem;">${s.reps} rep${s.reps!==1?'s':''} · single set</span>`;
+        const paceHtml  = s.peakPace != null
+          ? `<div style="margin-top:6px;color:#555;font-size:0.8rem;">Peak pace: <strong style="color:#aaa;">${s.peakPace.toFixed(1)} reps/min</strong></div>` : '';
+        return `
+          <div class="card" style="margin-bottom:8px;padding:14px 16px;">
+            <div onclick="toggleSessionDetail(${origIdx})" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+              <div>
+                <span style="color:#ff5200;font-weight:700;">Session ${s.id}</span>
+                <span style="color:#555;font-size:0.8rem;margin-left:8px;">${dateStr}</span>
+              </div>
+              <div style="display:flex;gap:14px;align-items:center;font-size:0.88rem;">
+                <span style="color:#fff;font-weight:700;">${s.reps} reps</span>
+                <span style="color:${sfc};">Form ${formStr}</span>
+                <span style="color:#555;">${durStr}</span>
+                <span id="sess-arrow-${origIdx}" style="color:#555;font-size:0.72rem;">▼</span>
+              </div>
+            </div>
+            <div id="sess-detail-${origIdx}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid #222;">
+              <div>${setsHtml}</div>${paceHtml}
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    // ── Timers ────────────────────────────────────────────────────────────────
+    let sessionElapsed   = 0;       // ms accumulated before last start
+    let sessionStartTime = null;    // Date.now() when tracking last started
+    let timerTick        = null;
+    let restStartTime    = null;
+    let restTick         = null;
+
+    function formatTime(ms) {
+      const s = Math.floor(ms / 1000);
+      return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+    }
+    function startSessionTimer() {
+      sessionStartTime = Date.now();
+      if (timerTick) clearInterval(timerTick);
+      timerTick = setInterval(() => {
+        const ms = sessionElapsed + (Date.now() - sessionStartTime);
+        document.getElementById('stat-session-time').textContent = formatTime(ms);
+      }, 500);
+    }
+    function pauseSessionTimer() {
+      if (sessionStartTime !== null) { sessionElapsed += Date.now() - sessionStartTime; sessionStartTime = null; }
+      if (timerTick) { clearInterval(timerTick); timerTick = null; }
+      document.getElementById('stat-session-time').textContent = formatTime(sessionElapsed);
+    }
+    function resetSessionTimer() {
+      pauseSessionTimer();
+      sessionElapsed = 0;
+      document.getElementById('stat-session-time').textContent = '00:00';
+    }
+    function startRestTimer() {
+      restStartTime = Date.now();
+      document.getElementById('stat-rest-time').style.color = '#fb923c';
+      if (restTick) clearInterval(restTick);
+      restTick = setInterval(() => {
+        document.getElementById('stat-rest-time').textContent = formatTime(Date.now() - restStartTime);
+      }, 500);
+    }
+    function stopRestTimer() {
+      if (restTick) { clearInterval(restTick); restTick = null; }
+      restStartTime = null;
+      document.getElementById('stat-rest-time').textContent = '—';
+      document.getElementById('stat-rest-time').style.color = '#555';
+    }
+
+    // ── Audio ─────────────────────────────────────────────────────────────────
+    let _audioCtx = null;
+    function _getAudio() {
+      if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return _audioCtx;
+    }
+    function playBeep(freq=880, dur=0.08, vol=0.2) {
+      try {
+        const ctx = _getAudio(), osc = ctx.createOscillator(), g = ctx.createGain();
+        osc.connect(g); g.connect(ctx.destination);
+        osc.frequency.value = freq; osc.type = 'sine';
+        g.gain.setValueAtTime(vol, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        osc.start(); osc.stop(ctx.currentTime + dur);
+      } catch(e) {}
+    }
+    function playGoalSound() {
+      [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => playBeep(f, 0.18, 0.3), i * 130));
+    }
+
+    // ── Goal bar ──────────────────────────────────────────────────────────────
+    let targetReps  = 0;
+    let goalReached = false;
+
+    function onGoalChange() {
+      targetReps  = parseInt(document.getElementById('rep-goal').value) || 0;
+      goalReached = false;
+      updateGoalBar(lastRepCount);
+    }
+    function updateGoalBar(reps) {
+      const wrap = document.getElementById('goal-bar-wrap');
+      const bar  = document.getElementById('goal-bar');
+      const txt  = document.getElementById('goal-text');
+      if (!targetReps) { wrap.style.display = 'none'; return; }
+      wrap.style.display = 'block';
+      const pct = Math.min(100, reps / targetReps * 100);
+      bar.style.width      = pct + '%';
+      bar.style.background = pct >= 100 ? '#4ade80' : '#ff5200';
+      txt.textContent      = reps >= targetReps ? '✓ Goal reached!' : `${reps} / ${targetReps}`;
+      txt.style.color      = reps >= targetReps ? '#4ade80' : '#555';
+    }
+
+    // ── Session avg gauge ─────────────────────────────────────────────────────
+    const GAUGE_CIRC = 2 * Math.PI * 46; // ≈ 289
+
+    function updateGauge(score) {
+      const circle = document.getElementById('gauge-circle');
+      const scoreEl = document.getElementById('gauge-score');
+      const catEl   = document.getElementById('gauge-category');
+      if (score == null) {
+        circle.style.strokeDashoffset = GAUGE_CIRC;
+        circle.style.stroke = '#333';
+        scoreEl.textContent = '—';
+        scoreEl.setAttribute('fill', '#fff');
+        catEl.textContent = '—';
+        catEl.style.color = '#555';
+        return;
+      }
+      circle.style.strokeDashoffset = GAUGE_CIRC * (1 - score / 100);
+      let color, cat;
+      if (score >= 80)      { color = '#4ade80'; cat = 'GOOD'; }
+      else if (score >= 55) { color = '#fb923c'; cat = 'OKAY'; }
+      else                  { color = '#f87171'; cat = 'POOR'; }
+      circle.style.stroke = color;
+      scoreEl.textContent = score.toFixed(0);
+      scoreEl.setAttribute('fill', color);
+      catEl.textContent   = cat;
+      catEl.style.color   = color;
+    }
+
+    // ── Set history ───────────────────────────────────────────────────────────
+    function updateSetHistory(sets) {
+      const card = document.getElementById('set-history-card');
+      const body = document.getElementById('set-history-body');
+      if (!sets || sets.length === 0) { card.style.display = 'none'; return; }
+      card.style.display = 'block';
+      body.innerHTML = sets.map(s => {
+        const formStr   = s.avg_form != null ? s.avg_form.toFixed(0) + '/100' : '—';
+        const formColor = s.avg_form == null ? '#555' : s.avg_form >= 80 ? '#4ade80' : s.avg_form >= 55 ? '#fb923c' : '#f87171';
+        return `<div style="display:flex;align-items:center;justify-content:space-between;
+                            padding:8px 0;border-bottom:1px solid #1e1e1e;font-size:0.88rem;">
+          <span style="color:#888;">Set ${s.set}</span>
+          <span style="color:#fff;font-weight:700;">${s.reps} rep${s.reps !== 1 ? 's' : ''}</span>
+          <span style="color:${formColor};">Form ${formStr}</span>
+        </div>`;
+      }).join('');
+    }
+
+    // ── Camera / socket ───────────────────────────────────────────────────────
     async function toggleCamera() {
       if (!pushupStream) {
         try {
@@ -281,23 +685,44 @@
 
           document.getElementById('pushup-placeholder').style.display = 'none';
 
-          // Connect socket
           pushupSocket = io('/api/pushup-stream');
           pushupSocket.on('connected', () => {
             document.getElementById('btn-track').disabled = false;
             document.getElementById('btn-reset').disabled = false;
           });
-          pushupSocket.on('result',   onPushupResult);
-          pushupSocket.on('started',  () => { pushupTracking = true;  updateTrackBtn(); });
-          pushupSocket.on('stopped',  () => { pushupTracking = false; updateTrackBtn(); });
+          pushupSocket.on('result',  onPushupResult);
+          pushupSocket.on('started', () => {
+            pushupTracking = true;
+            updateTrackBtn();
+            beginSession();
+            startSessionTimer();
+            stopRestTimer();
+          });
+          pushupSocket.on('stopped', () => {
+            pushupTracking = false;
+            updateTrackBtn();
+            finalizeSession();
+            pauseSessionTimer();
+            startRestTimer();
+          });
           pushupSocket.on('reset_ok', () => {
             document.getElementById('stat-reps').textContent  = '0';
             document.getElementById('stat-form').textContent  = '—';
             document.getElementById('stat-state').textContent = '—';
+            document.getElementById('stat-rpm').textContent   = '—';
             document.getElementById('pushup-feedback').innerHTML = '';
+            cancelSession();
+            lastResult   = null;
+            resetSessionTimer();
+            stopRestTimer();
+            updateGauge(null);
+            updateSetHistory([]);
+            goalReached  = false;
+            lastRepCount = 0;
+            updateGoalBar(0);
           });
 
-          frameInterval = setInterval(() => { drawLocal(); sendFrame(); }, 100); // 10 fps
+          frameInterval = setInterval(() => { drawLocal(); sendFrame(); }, 100);
 
           document.getElementById('btn-camera').textContent = 'Stop Camera';
           document.getElementById('btn-camera').style.background = '#374151';
@@ -305,7 +730,6 @@
           alert('Could not access camera: ' + e.message);
         }
       } else {
-        // Stop everything
         clearInterval(frameInterval); frameInterval = null;
         pushupStream.getTracks().forEach(t => t.stop());
         pushupStream = null;
@@ -318,6 +742,10 @@
 
         pushupTracking = false;
         receivingAnnotated = false;
+        if (currentSession) finalizeSession();
+        pauseSessionTimer();
+        stopRestTimer();
+
         document.getElementById('btn-camera').textContent = 'Start Camera';
         document.getElementById('btn-camera').style.background = '';
         document.getElementById('btn-track').disabled = true;
@@ -336,7 +764,7 @@
     }
 
     function drawLocal() {
-      if (receivingAnnotated) return; // server is sending annotated frames, don't overwrite
+      if (receivingAnnotated) return;
       const video  = document.getElementById('pushup-video');
       const canvas = document.getElementById('pushup-canvas');
       if (!video.videoWidth) return;
@@ -357,7 +785,15 @@
     }
 
     function onPushupResult(data) {
-      document.getElementById('stat-reps').textContent = data.rep_count;
+      lastResult = data;
+      // track peak pace for current session
+      if (currentSession && data.reps_per_minute != null) {
+        if (currentSession.peakPace == null || data.reps_per_minute > currentSession.peakPace) {
+          currentSession.peakPace = data.reps_per_minute;
+        }
+      }
+      const reps = data.rep_count;
+      document.getElementById('stat-reps').textContent = reps;
 
       const formEl = document.getElementById('stat-form');
       if (data.form_score != null) {
@@ -370,6 +806,9 @@
         stateEl.textContent = data.state.toUpperCase();
         stateEl.style.color = data.state === 'up' ? '#4ade80' : '#f87171';
       }
+
+      const rpmEl = document.getElementById('stat-rpm');
+      rpmEl.textContent = data.reps_per_minute != null ? data.reps_per_minute.toFixed(1) : '—';
 
       if (data.annotated_frame_base64) {
         receivingAnnotated = true;
@@ -387,6 +826,23 @@
       fbEl.innerHTML = (data.feedback || []).map(f =>
         `<span class="badge amber" style="margin-right:6px;margin-bottom:4px;">${f}</span>`
       ).join('');
+
+      // Goal bar + audio cue on new rep
+      if (reps > lastRepCount) {
+        playBeep(880, 0.08);
+        if (targetReps && reps >= targetReps && !goalReached) {
+          goalReached = true;
+          playGoalSound();
+        }
+      }
+      lastRepCount = reps;
+      updateGoalBar(reps);
+
+      // Session avg gauge
+      updateGauge(data.session_avg_form_score);
+
+      // Set history
+      updateSetHistory(data.set_history);
     }
 
     function updateTrackBtn() {
